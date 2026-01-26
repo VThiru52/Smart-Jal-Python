@@ -323,8 +323,9 @@ class SpatialService:
         """
         try:
             import os
-            # Use absolute path to the geojson file
-            file_path = r"d:\Smart Jal\backend\database\andhra-pradesh.geojson"
+            # Use path relative to project root
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            file_path = os.path.join(base_path, "database", "andhra-pradesh.geojson")
             if os.path.exists(file_path):
                 with open(file_path, 'r') as f:
                     return json.load(f)
