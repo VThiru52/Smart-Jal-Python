@@ -1,0 +1,14 @@
+database/
+.venv/
+__pycache__/
+*.pyc
+tests/
+scripts/
+*.geojson
+*.xlsx
+*.tif
+*.dbf
+*.shp
+*.shx
+*.prj
+*.cpg

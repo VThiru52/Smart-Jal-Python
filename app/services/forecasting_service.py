@@ -3,7 +3,6 @@ import pandas as pd
 from prophet import Prophet
 from typing import List, Dict, Any, Optional
 from app.core.supabase import get_supabase_admin
-import shap
 import numpy as np
 from datetime import datetime
 from pathlib import Path
@@ -154,52 +153,8 @@ class ForecastingService:
         future = model_prophet.make_future_dataframe(periods=periods, freq='M')
         forecast_prophet = model_prophet.predict(future)
 
-        # 3. XGBoost Model for SHAP (only if enough data for lags)
+        # 3. Explainability (Disabled for performance/slug size)
         shap_explanation = None
-        if len(df) >= 10:
-            try:
-                # Prepare features for XGBoost: lags and domain features
-                # 1. Fetch village metadata for domain features
-                village_resp = self.supabase.table("villages").select("average_rainfall_mm, water_consumption_m3").eq("id", village_id).single().execute()
-                v_meta = village_resp.data or {}
-                avg_rainfall = v_meta.get("average_rainfall_mm", 850.0) or 850.0
-                extraction = v_meta.get("water_consumption_m3", 0.0) or 0.0
-
-                df_xgb = df.copy()
-                df_xgb['month'] = df_xgb['ds'].dt.month
-                df_xgb['lag1'] = df_xgb['y'].shift(1)
-                df_xgb['lag3'] = df_xgb['y'].shift(3)
-                
-                # Add domain features (Extraction impacts depletion, Rainfall impacts recharge)
-                df_xgb['rainfall_deficit'] = avg_rainfall - (df_xgb['y'] * 10) # Proxy for correlation
-                df_xgb['extraction_intensity'] = extraction / 1000.0 if extraction > 0 else 0
-                
-                df_xgb = df_xgb.dropna()
-
-                if not df_xgb.empty:
-                    X = df_xgb[['month', 'lag1', 'lag3', 'rainfall_deficit', 'extraction_intensity']]
-                    y = df_xgb['y']
-                    
-                    xgb_model = xgb.XGBRegressor(
-                        n_estimators=100, 
-                        learning_rate=0.1,
-                        importance_type='gain'
-                    )
-                    xgb_model.fit(X, y)
-                    
-                    # Explain the latest prediction using SHAP
-                    latest_X = X.iloc[[-1]]
-                    explainer = shap.Explainer(xgb_model)
-                    shap_values = explainer(latest_X)
-                    
-                    shap_explanation = {
-                        "base_value": float(shap_values.base_values[0]),
-                        "values": shap_values.values[0].tolist(),
-                        "feature_names": X.columns.tolist()
-                    }
-            except Exception as e:
-                print(f"SHAP explanation failed: {str(e)}")
-                shap_explanation = None
 
         # 4. Prepare results and store in DB
         results = forecast_prophet[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(periods)
@@ -238,10 +193,5 @@ class ForecastingService:
             }
         }
 
-    async def get_shap_explanation(self, model, X):
-        """Generic SHAP explainer for XGBoost/LSTM models if used"""
-        explainer = shap.Explainer(model)
-        shap_values = explainer(X)
-        return shap_values
 
 forecasting_service = ForecastingService()

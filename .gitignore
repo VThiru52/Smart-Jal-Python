@@ -1,8 +1,15 @@
 # Large data files
+database/
 *.tif
 *.dbf
 *.sqlite
 *.zip
+*.geojson
+*.xlsx
+*.shp
+*.shx
+*.prj
+*.cpg
 
 # Python
 __pycache__/
@@ -10,7 +17,4 @@ __pycache__/
 *$py.class
 venv/
 .env
-
-# OS
-.DS_Store
-Thumbs.db
+.venv/
