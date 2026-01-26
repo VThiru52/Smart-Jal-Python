@@ -15,10 +15,10 @@ lightgbm==4.3.0
 tensorflow==2.15.0
 prophet==1.1.5
 shap==0.44.0
-geopandas==0.14.2
-rasterio==1.3.9
-PyKrige==1.7.1
-GDAL==3.8.2
+geopandas
+rasterio
+PyKrige
+GDAL
 # httpx is managed by supabase
 pytest==7.4.4
 python-dotenv==1.0.0
