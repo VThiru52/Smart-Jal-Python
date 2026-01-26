@@ -1,5 +1,5 @@
 # Production-grade Dockerfile for Geospatial Python App
-FROM python:3.10-slim-bookworm
+FROM python:3.11-slim-bookworm
 
 # Install system dependencies for GIS and Postgres
 RUN apt-get update && apt-get install -y --no-install-recommends \
