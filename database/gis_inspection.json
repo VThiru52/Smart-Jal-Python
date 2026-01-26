@@ -1,0 +1,142 @@
+{
+  "GTWells": {
+    "columns": [
+      "District_N",
+      "Mandal_Nam",
+      "Village_Na",
+      "Bore_Well",
+      "Well_Type",
+      "Bore_Depth",
+      "Pump_Capac",
+      "Crop_Type",
+      "Irrigation",
+      "Extant_Lan",
+      "Lat",
+      "Long",
+      "geometry"
+    ],
+    "count": 88988,
+    "sample": [
+      {
+        "District_N": "Krishna",
+        "Mandal_Nam": "A Konduru",
+        "Village_Na": "00-KAMBHAMPADU",
+        "Bore_Well": "Working",
+        "Well_Type": "Bore Well",
+        "Bore_Depth": 141,
+        "Pump_Capac": 5,
+        "Crop_Type": "Wet",
+        "Irrigation": "Flood Irrigation",
+        "Extant_Lan": 3,
+        "Lat": 16.98591833,
+        "Long": 80.65496667
+      },
+      {
+        "District_N": "Krishna",
+        "Mandal_Nam": "A Konduru",
+        "Village_Na": "00-KAMBHAMPADU",
+        "Bore_Well": "Working",
+        "Well_Type": "Bore Well",
+        "Bore_Depth": 122,
+        "Pump_Capac": 5,
+        "Crop_Type": "Wet",
+        "Irrigation": "Flood Irrigation",
+        "Extant_Lan": 2,
+        "Lat": 16.9858,
+        "Long": 80.65450833
+      },
+      {
+        "District_N": "Krishna",
+        "Mandal_Nam": "A Konduru",
+        "Village_Na": "00-KAMBHAMPADU",
+        "Bore_Well": "Working",
+        "Well_Type": "Bore Well",
+        "Bore_Depth": 150,
+        "Pump_Capac": 0,
+        "Crop_Type": "Wet",
+        "Irrigation": "Flood Irrigation",
+        "Extant_Lan": 3,
+        "Lat": 16.98557456,
+        "Long": 80.65445202
+      },
+      {
+        "District_N": "Krishna",
+        "Mandal_Nam": "A Konduru",
+        "Village_Na": "00-KAMBHAMPADU",
+        "Bore_Well": "Working",
+        "Well_Type": "Bore Well",
+        "Bore_Depth": 140,
+        "Pump_Capac": 0,
+        "Crop_Type": "Wet",
+        "Irrigation": "Flood Irrigation",
+        "Extant_Lan": 4,
+        "Lat": 16.98577305,
+        "Long": 80.65490223
+      },
+      {
+        "District_N": "Krishna",
+        "Mandal_Nam": "A Konduru",
+        "Village_Na": "00-KAMBHAMPADU",
+        "Bore_Well": "Working",
+        "Well_Type": "Bore Well",
+        "Bore_Depth": 186,
+        "Pump_Capac": 5,
+        "Crop_Type": "Wet",
+        "Irrigation": "Flood Irrigation",
+        "Extant_Lan": 4,
+        "Lat": 16.99753775,
+        "Long": 80.6585566
+      }
+    ],
+    "geom_type": "Point"
+  },
+  "Aquifers": {
+    "columns": [
+      "AQUI_CODE",
+      "NEWCODE",
+      "STATE",
+      "area",
+      "Geo_Class",
+      "geometry"
+    ],
+    "count": 8,
+    "sample": [
+      {
+        "AQUI_CODE": "BG",
+        "NEWCODE": "12",
+        "STATE": "ANDHRA PRADESH",
+        "area": 0,
+        "Geo_Class": "Banded Gneissic Granites"
+      },
+      {
+        "AQUI_CODE": "ST",
+        "NEWCODE": "4",
+        "STATE": "ANDHRA PRADESH",
+        "area": 0,
+        "Geo_Class": "Sand Stones"
+      },
+      {
+        "AQUI_CODE": "SH",
+        "NEWCODE": "5",
+        "STATE": "ANDHRA PRADESH",
+        "area": 0,
+        "Geo_Class": "Shales"
+      },
+      {
+        "AQUI_CODE": "LS",
+        "NEWCODE": "6",
+        "STATE": "ANDHRA PRADESH",
+        "area": 0,
+        "Geo_Class": "Lime Stones"
+      },
+      {
+        "AQUI_CODE": "QZ",
+        "NEWCODE": "9",
+        "STATE": "ANDHRA PRADESH",
+        "area": 0,
+        "Geo_Class": "Quartzite"
+      }
+    ],
+    "geom_type": "MultiPolygon"
+  }
+}

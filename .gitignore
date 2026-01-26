@@ -1,0 +1,16 @@
+# Large data files
+*.tif
+*.dbf
+*.sqlite
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# OS
+.DS_Store
+Thumbs.db

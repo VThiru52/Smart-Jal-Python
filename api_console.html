@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Jal | API Control Center</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00d2ff;
+            --secondary: #3a7bd5;
+            --accent: #ff00c8;
+            --bg: #0a0e17;
+            --card-bg: rgba(255, 255, 255, 0.03);
+            --border: rgba(255, 255, 255, 0.1);
+            --text: #e0e0e0;
+            --font: 'Outfit', sans-serif;
+            --mono: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font);
+            background-color: var(--bg);
+            background-image:
+                radial-gradient(circle at 20% 20%, rgba(0, 210, 255, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(58, 123, 213, 0.05) 0%, transparent 40%);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar Navigation */
+        aside {
+            width: 300px;
+            background: rgba(10, 14, 23, 0.8);
+            border-right: 1px solid var(--border);
+            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 0;
+            z-index: 10;
+        }
+
+        .logo {
+            padding: 0 2rem 2rem;
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -1px;
+        }
+
+        nav ul {
+            list-style: none;
+        }
+
+        nav li {
+            padding: 0.8rem 2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 400;
+            border-left: 3px solid transparent;
+            opacity: 0.7;
+        }
+
+        nav li:hover {
+            opacity: 1;
+            background: var(--card-bg);
+        }
+
+        nav li.active {
+            opacity: 1;
+            background: rgba(0, 210, 255, 0.1);
+            border-left-color: var(--primary);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* Main Content */
+        main {
+            flex: 1;
+            padding: 3rem;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+
+        .section {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h2 {
+            font-size: 2.2rem;
+            margin-bottom: 2rem;
+            font-weight: 800;
+            color: white;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 2rem;
+        }
+
+        /* API Card */
+        .api-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 1.5rem;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .api-card:hover {
+            transform: scale(1.02);
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .method {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 5px;
+            font-size: 0.75rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+        }
+
+        .get {
+            background: #2ecc71;
+            color: white;
+        }
+
+        .post {
+            background: #3498db;
+            color: white;
+        }
+
+        .path {
+            font-family: var(--mono);
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            color: var(--primary);
+        }
+
+        .desc {
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            opacity: 0.7;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 1.2rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.8rem;
+            margin-bottom: 0.4rem;
+            font-weight: 600;
+            opacity: 0.8;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.8rem;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.2);
+            color: white;
+            font-family: var(--font);
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            border-radius: 12px;
+            border: none;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 0.5rem;
+        }
+
+        button:hover {
+            filter: brightness(1.2);
+            box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);
+        }
+
+        /* Result Panel */
+        .result-panel {
+            margin-top: 1.5rem;
+            background: #000;
+            border-radius: 12px;
+            padding: 1rem;
+            font-family: var(--mono);
+            font-size: 0.85rem;
+            max-height: 250px;
+            overflow: auto;
+            position: relative;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .status-badge {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-weight: 800;
+            font-size: 0.7rem;
+        }
+
+        .status-ok {
+            color: #2ecc71;
+        }
+
+        .status-error {
+            color: #e74c3c;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+    </style>
+</head>
+
+<body>
+
+    <aside>
+        <div class="logo">Smart Jal v2.0</div>
+        <nav>
+            <ul>
+                <li class="active" onclick="showSection('villages')">Village Intelligence</li>
+                <li onclick="showSection('forecast')">AI Forecasting</li>
+                <li onclick="showSection('recharge')">Recharge Engine</li>
+                <li onclick="showSection('anomalies')">Anomaly Detection</li>
+                <li onclick="showSection('ingest')">Data Management</li>
+            </ul>
+        </nav>
+    </aside>
+
+    <main>
+        <!-- Villages Section -->
+        <section id="villages" class="section active">
+            <h2>Village Intelligence</h2>
+            <div class="grid">
+                <div class="api-card">
+                    <span class="method get">GET</span>
+                    <div class="path">/village/{id}</div>
+                    <p class="desc">Retrieve full metadata and GIS boundaries for a village.</p>
+                    <div class="form-group">
+                        <label for="v-id">Village ID (UUID)</label>
+                        <input type="text" id="v-id" title="Village ID" placeholder="Enter Village UUID">
+                    </div>
+                    <button onclick="testApi('v-id', '/village/', 'v-res-1')">Execute Search</button>
+                    <div class="result-panel" id="v-res-1">
+                        <span class="status-badge">READY</span>
+                        <pre>Waiting for input...</pre>
+                    </div>
+                </div>
+
+                <div class="api-card">
+                    <span class="method get">GET</span>
+                    <div class="path">/village/district/{name}</div>
+                    <p class="desc">List all monitored villages in a specific district.</p>
+                    <div class="form-group">
+                        <label for="v-district">District Name</label>
+                        <input type="text" id="v-district" title="District Name" value="Krishna">
+                    </div>
+                    <button onclick="testApi('v-district', '/village/district/', 'v-res-2')">Fetch District
+                        Data</button>
+                    <div class="result-panel" id="v-res-2">
+                        <span class="status-badge">READY</span>
+                        <pre>Waiting for input...</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Forecasting Section -->
+        <section id="forecast" class="section">
+            <h2>AI Forecasting</h2>
+            <div class="grid">
+                <div class="api-card">
+                    <span class="method get">GET</span>
+                    <div class="path">/village/{id}/forecast</div>
+                    <p class="desc">Generate 3/6/12 month water level predictions using Prophet AI.</p>
+                    <div class="form-group">
+                        <label for="f-id">Village ID</label>
+                        <input type="text" id="f-id" title="Village ID" placeholder="Village UUID">
+                    </div>
+                    <div class="form-group">
+                        <label for="f-periods">Periods (Months)</label>
+                        <input type="number" id="f-periods" title="Forecast Periods" value="12">
+                    </div>
+                    <button onclick="testForecast()">Generate AI Forecast</button>
+                    <div class="result-panel" id="f-res">
+                        <span class="status-badge">READY</span>
+                        <pre>AI Engine Standby...</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recharge Section -->
+        <section id="recharge" class="section">
+            <h2>Recharge Engine</h2>
+            <div class="grid">
+                <div class="api-card">
+                    <span class="method get">GET</span>
+                    <div class="path">/recharge/priorities</div>
+                    <p class="desc">Calculate village-level suitability ranks based on multi-criteria analysis.</p>
+                    <div class="form-group">
+                        <label for="r-district">District</label>
+                        <input type="text" id="r-district" title="District Name" value="Krishna">
+                    </div>
+                    <button onclick="testApi('r-district', '/recharge/priorities?district=', 'r-res-1', true)">Run
+                        Optimization</button>
+                    <div class="result-panel" id="r-res-1">
+                        <span class="status-badge">READY</span>
+                        <pre>Optimization Ready...</pre>
+                    </div>
+                </div>
+
+                <div class="api-card">
+                    <span class="method get">GET</span>
+                    <div class="path">/recharge/zones</div>
+                    <p class="desc">Fetch target spatial zones for artificial recharge structures.</p>
+                    <button onclick="testApi(null, '/recharge/zones', 'r-res-2')">Load Spatial Zones</button>
+                    <div class="result-panel" id="r-res-2">
+                        <span class="status-badge">READY</span>
+                        <pre>GIS Processor Ready...</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Anomalies Section -->
+        <section id="anomalies" class="section">
+            <h2>Anomaly Detection</h2>
+            <div class="grid">
+                <div class="api-card">
+                    <span class="method get">GET</span>
+                    <div class="path">/anomalies/</div>
+                    <p class="desc">Retrieve all detected critical water level fluctuations.</p>
+                    <button onclick="testApi(null, '/anomalies/', 'a-res')">Scan Events</button>
+                    <div class="result-panel" id="a-res">
+                        <span class="status-badge">READY</span>
+                        <pre>Monitoring System Online...</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Ingestion Section -->
+        <section id="ingest" class="section">
+            <h2>Data Management</h2>
+            <div class="grid">
+                <div class="api-card">
+                    <span class="method post">POST</span>
+                    <div class="path">/ingest/reading</div>
+                    <p class="desc">Record a single water level measurement from a piezometer.</p>
+                    <div class="form-group">
+                        <label for="i-json">Raw JSON Data</label>
+                        <input type="text" id="i-json" title="Enter JSON data"
+                            placeholder='e.g. {"piezometer_id": "...", ...}'
+                            value='{"piezometer_id": "ST-001", "reading_date": "2024-01-09", "water_level_mbgl": 5.4}'>
+                    </div>
+                    <button onclick="testPost('i-json', '/ingest/reading', 'i-res')">Sync Reading</button>
+                    <div class="result-panel" id="i-res">
+                        <span class="status-badge">READY</span>
+                        <pre>Integration Port Active...</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const BASE_URL = 'http://localhost:8000/api/v1';
+
+        function showSection(id) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('nav li').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        async function testApi(inputId, path, resId, isQuery = false) {
+            const resEl = document.getElementById(resId);
+            const pre = resEl.querySelector('pre');
+            const badge = resEl.querySelector('.status-badge');
+
+            let val = inputId ? document.getElementById(inputId).value : '';
+            const url = `${BASE_URL}${path}${val}`;
+
+            pre.innerHTML = "Tracing request...";
+            badge.innerHTML = "PENDING";
+            badge.className = "status-badge";
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                badge.innerHTML = response.ok ? "HTTP 200" : `HTTP ${response.status}`;
+                badge.className = `status-badge ${response.ok ? 'status-ok' : 'status-error'}`;
+                pre.innerHTML = JSON.stringify(data, null, 2);
+            } catch (err) {
+                badge.innerHTML = "CONNECTION ERROR";
+                badge.className = "status-badge status-error";
+                pre.innerHTML = `Failed to reach ${url}\nMake sure the FastAPI server is running.`;
+            }
+        }
+
+        async function testForecast() {
+            const id = document.getElementById('f-id').value;
+            const p = document.getElementById('f-periods').value;
+            const resEl = document.getElementById('f-res');
+            const pre = resEl.querySelector('pre');
+            const url = `${BASE_URL}/village/${id}/forecast?periods=${p}`;
+
+            pre.innerHTML = "⚡ Initializing AI Engine...";
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                pre.innerHTML = JSON.stringify(data, null, 2);
+            } catch (err) {
+                pre.innerHTML = "AI Engine Connection Timeout";
+            }
+        }
+
+        async function testPost(inputId, path, resId) {
+            const resEl = document.getElementById(resId);
+            const pre = resEl.querySelector('pre');
+            let val = document.getElementById(inputId).value;
+            const url = `${BASE_URL}${path}`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: val
+                });
+                const data = await response.json();
+                pre.innerHTML = JSON.stringify(data, null, 2);
+            } catch (err) {
+                pre.innerHTML = "Network Ingestion Failure";
+            }
+        }
+    </script>
+</body>
+
+</html>
