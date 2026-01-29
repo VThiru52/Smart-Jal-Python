@@ -23,7 +23,19 @@ class ForecastingService:
             return self._offline_df
 
         if not self._offline_file.exists():
+            logger.error(f"Offline file NOT found at: {self._offline_file}")
+            # Try to list directory contents to see where we are
+            try:
+                parent = self._offline_file.parent
+                if parent.exists():
+                    logger.info(f"Contents of {parent}: {[x.name for x in parent.iterdir()]}")
+                else:
+                    logger.error(f"Parent directory {parent} does not exist either")
+            except Exception as e:
+                logger.error(f"Error listing directory: {e}")
             return None
+        
+        logger.info(f"Offline file found at: {self._offline_file}")
 
         try:
             df = pd.read_excel(self._offline_file, sheet_name="meta-historical")
