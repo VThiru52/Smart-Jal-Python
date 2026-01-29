@@ -16,6 +16,6 @@ PyKrige
 # httpx is managed by supabase
 python-dotenv==1.0.0
 # google-genai
-mistralai
+mistralai>=1.0.0
 
 openpyxl>=3.1.0
