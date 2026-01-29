@@ -6,6 +6,10 @@ from datetime import datetime
 from pathlib import Path
 from app.services.audit_service import audit_service
 from postgrest.exceptions import APIError
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 class ForecastingService:
     def __init__(self):
@@ -37,8 +41,10 @@ class ForecastingService:
 
             self._offline_df = df
             self._offline_date_cols = date_cols
+            logger.info(f"Loaded offline dataframe with {len(date_cols)} date columns.")
             return self._offline_df
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to load offline dataframe: {e}")
             return None
 
     def _get_offline_readings(self, village_id: str) -> list:
@@ -50,9 +56,11 @@ class ForecastingService:
         try:
             piezo_resp = self.supabase.table("piezometers").select("station_code").eq("village_id", village_id).execute()
             station_codes = [str(p["station_code"]) for p in (piezo_resp.data or []) if p.get("station_code")]
-        except APIError:
+        except APIError as e:
+            logger.error(f"Supabase API Error getting piezometers: {e}")
             station_codes = []
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error getting piezometers: {e}")
             station_codes = []
 
         subset = pd.DataFrame()
@@ -68,14 +76,37 @@ class ForecastingService:
 
             if village_name:
                 target = village_name.strip().lower()
+                logger.info(f"Looking for village name: '{target}'")
                 village_cols = [col for col in df.columns if "Village" in str(col) and "Name" in str(col)]
+                logger.info(f"Found village columns in Excel: {village_cols}")
+                
                 for col in village_cols or ["Village Name"]:
                     if col in df.columns:
-                        subset = df[df[col].astype(str).str.strip().str.lower() == target]
+                        # Normalize column values
+                        col_vals = df[col].astype(str).str.strip().str.lower()
+                        
+                        # 1. Exact Match
+                        subset = df[col_vals == target]
+                        
+                        # 2. Containment Match (if exact match fails)
+                        if subset.empty:
+                            # Check if target is in Excel value or Excel value is in target
+                            # We use a lambda to check containment for each row
+                            # optimization: only check if target > 3 chars to avoid noise
+                            if len(target) > 3:
+                                mask = col_vals.apply(lambda x: target in x or x in target)
+                                subset = df[mask]
+                                if not subset.empty:
+                                    logger.info(f"Fuzzy match found in column '{col}' for '{target}'")
+
                         if not subset.empty:
+                            logger.info(f"Match found in column '{col}'")
                             break
+                        else:
+                            logger.info(f"No match in column '{col}'")
 
         if subset.empty:
+            logger.warning(f"No offline data found for village_id {village_id}")
             return []
 
         records = []
