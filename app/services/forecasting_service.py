@@ -14,137 +14,8 @@ logger = logging.getLogger(__name__)
 class ForecastingService:
     def __init__(self):
         self.supabase = get_supabase_admin()
-        self._offline_df: Optional[pd.DataFrame] = None
-        self._offline_date_cols: Optional[list] = None
-        self._offline_file = Path(__file__).resolve().parents[2] / "database" / "SmartJal" / "WaterLevels_Krishna" / "master data_updated.xlsx"
 
-    def _load_offline_dataframe(self) -> Optional[pd.DataFrame]:
-        if self._offline_df is not None:
-            return self._offline_df
-
-        if not self._offline_file.exists():
-            logger.error(f"Offline file NOT found at: {self._offline_file}")
-            # Try to list directory contents to see where we are
-            try:
-                parent = self._offline_file.parent
-                if parent.exists():
-                    logger.info(f"Contents of {parent}: {[x.name for x in parent.iterdir()]}")
-                else:
-                    logger.error(f"Parent directory {parent} does not exist either")
-            except Exception as e:
-                logger.error(f"Error listing directory: {e}")
-            return None
-        
-        logger.info(f"Offline file found at: {self._offline_file}")
-
-        try:
-            df = pd.read_excel(self._offline_file, sheet_name="meta-historical")
-            date_cols = []
-            for col in df.columns:
-                if isinstance(col, (datetime, pd.Timestamp)):
-                    date_cols.append(col)
-                else:
-                    try:
-                        parsed = pd.to_datetime(col)
-                        if parsed.year >= 1990:
-                            date_cols.append(col)
-                    except Exception:
-                        continue
-
-            self._offline_df = df
-            self._offline_date_cols = date_cols
-            logger.info(f"Loaded offline dataframe with {len(date_cols)} date columns.")
-            return self._offline_df
-        except Exception as e:
-            logger.error(f"Failed to load offline dataframe: {e}")
-            return None
-
-    def _get_offline_readings(self, village_id: str) -> list:
-        df = self._load_offline_dataframe()
-        if df is None or not self._offline_date_cols:
-            return []
-
-        station_codes = []
-        try:
-            piezo_resp = self.supabase.table("piezometers").select("station_code").eq("village_id", village_id).execute()
-            station_codes = [str(p["station_code"]) for p in (piezo_resp.data or []) if p.get("station_code")]
-        except APIError as e:
-            logger.error(f"Supabase API Error getting piezometers: {e}")
-            station_codes = []
-        except Exception as e:
-            logger.error(f"Error getting piezometers: {e}")
-            station_codes = []
-
-        subset = pd.DataFrame()
-        if station_codes:
-            subset = df[df["ID"].astype(str).isin(station_codes)]
-        else:
-            village_name = None
-            try:
-                village_resp = self.supabase.table("villages").select("name").eq("id", village_id).single().execute()
-                village_name = (village_resp.data or {}).get("name")
-            except Exception:
-                village_name = None
-
-            if village_name:
-                target = village_name.strip().lower()
-                logger.info(f"Looking for village name: '{target}'")
-                village_cols = [col for col in df.columns if "Village" in str(col) and "Name" in str(col)]
-                logger.info(f"Found village columns in Excel: {village_cols}")
-                
-                for col in village_cols or ["Village Name"]:
-                    if col in df.columns:
-                        # Normalize column values
-                        col_vals = df[col].astype(str).str.strip().str.lower()
-                        
-                        # 1. Exact Match
-                        subset = df[col_vals == target]
-                        
-                        # 2. Containment Match (if exact match fails)
-                        if subset.empty:
-                            # Check if target is in Excel value or Excel value is in target
-                            # We use a lambda to check containment for each row
-                            # optimization: only check if target > 3 chars to avoid noise
-                            if len(target) > 3:
-                                mask = col_vals.apply(lambda x: target in x or x in target)
-                                subset = df[mask]
-                                if not subset.empty:
-                                    logger.info(f"Fuzzy match found in column '{col}' for '{target}'")
-
-                        if not subset.empty:
-                            logger.info(f"Match found in column '{col}'")
-                            break
-                        else:
-                            logger.info(f"No match in column '{col}'")
-
-        if subset.empty:
-            logger.warning(f"No offline data found for village_id {village_id}")
-            return []
-
-        records = []
-        for _, row in subset.iterrows():
-            for col in self._offline_date_cols:
-                value = row.get(col)
-                if pd.isna(value):
-                    continue
-
-                ts = col
-                if not isinstance(ts, (datetime, pd.Timestamp)):
-                    try:
-                        ts = pd.to_datetime(ts)
-                    except Exception:
-                        continue
-
-                try:
-                    records.append({
-                        "ds": pd.to_datetime(ts).to_pydatetime(),
-                        "y": float(value)
-                    })
-                except Exception:
-                    continue
-        return records
-
-    def _build_dataframe(self, supabase_data: list, fallback_records: Optional[list] = None) -> Optional[pd.DataFrame]:
+    def _build_dataframe(self, supabase_data: list) -> Optional[pd.DataFrame]:
         rows = []
         for record in supabase_data or []:
             try:
@@ -155,16 +26,7 @@ class ForecastingService:
             except Exception:
                 continue
 
-        for record in fallback_records or []:
-            try:
-                rows.append({
-                    "ds": pd.to_datetime(record["ds"]).tz_localize(None),
-                    "y": float(record["y"])
-                })
-            except Exception:
-                continue
-
-        if len(rows) < 5:
+        if len(rows) < 3:
             return None
 
         df = pd.DataFrame(rows).drop_duplicates(subset=["ds"]).sort_values("ds")
@@ -181,11 +43,8 @@ class ForecastingService:
         ).eq("piezometers.village_id", village_id).order("reading_date").execute()
 
         df = self._build_dataframe(readings_resp.data)
-        if df is None:
-            offline_records = self._get_offline_readings(village_id)
-            df = self._build_dataframe(readings_resp.data or [], offline_records)
 
-        if df is None or len(df) < 3:
+        if df is None:
             return {"error": "Insufficient historical data for forecasting"}
 
         # 2. Lightweight Linear Regression
