@@ -16,13 +16,13 @@ async def get_district_drought_risk(district: str = "Krishna"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/recommendations/{village_id}")
-async def get_village_recommendations(village_id: str):
+@router.get("/recommendations/{village_id}/{recommendation_title}")
+async def get_recommendation_detail(village_id: str, recommendation_title: str):
     """
-    Get AI-powered water management recommendations for a village
+    Get AI-powered structured dashboard and blog for a specific recommendation
     """
     try:
-        data = await drought_service.get_village_recommendations(village_id)
+        data = await drought_service.get_recommendation_detail(village_id, recommendation_title)
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

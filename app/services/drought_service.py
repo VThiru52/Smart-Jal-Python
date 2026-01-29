@@ -141,7 +141,7 @@ class DroughtService:
 
     async def get_recommendation_detail(self, village_id: str, recommendation_title: str):
         """
-        Get detailed blog-post content for a specific recommendation
+        Get structured dashboard content and blog for a specific recommendation
         """
         try:
             # 1. Get village context
@@ -181,13 +181,25 @@ class DroughtService:
             if not target_rec:
                 target_rec = {"title": recommendation_title, "description": "Analyzing intervention details..."}
 
-            # 4. Generate blog post
-            blog_content = await ai_service.generate_recommendation_blog(target_rec, ai_context)
+            # 4. Generate structured dashboard and blog post
+            # We run these in parallel for performance
+            import asyncio
+            structured_task = ai_service.generate_structured_recommendation(target_rec, ai_context)
+            blog_task = ai_service.generate_recommendation_blog(target_rec, ai_context)
+            
+            structured_data, blog_content = await asyncio.gather(structured_task, blog_task)
 
             return {
                 "village_id": village_id,
                 "title": recommendation_title,
-                "content": blog_content
+                "content": structured_data,
+                "blog": blog_content,
+                "type": target_rec.get("type", "INTERVENTION"),
+                "impact": target_rec.get("impact", "MEDIUM"),
+                "hero": {
+                    "image": "https://images.unsplash.com/photo-1540324155974-7523202daa3f?auto=format&fit=crop&q=80&w=1200",
+                    "caption": f"Strategic intervention for {village['name']}."
+                }
             }
         except Exception as e:
             print(f"Error in get_recommendation_detail: {e}")

@@ -1,4 +1,4 @@
-import google.generativeai as genai
+from mistralai import Mistral
 from app.core.config import settings
 import logging
 import json
@@ -6,13 +6,12 @@ from typing import Dict, Any, List
 
 class GeminiService:
     def __init__(self):
-        self.api_key = settings.GEMINI_API_KEY
+        self.api_key = settings.MISTRAL_API_KEY
         if self.api_key:
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.client = Mistral(api_key=self.api_key)
         else:
-            logging.warning("GEMINI_API_KEY not found. AI features will use mock responses.")
-            self.model = None
+            logging.warning("MISTRAL_API_KEY not found. AI features will use mock responses.")
+            self.client = None
 
     async def generate_solution_recommendation(
         self, 
@@ -23,7 +22,7 @@ class GeminiService:
         """
         Generates a solution recommendation based on village data and water deficit.
         """
-        if not self.model:
+        if not self.client:
             return self._mock_recommendation(village_data)
 
         prompt = f"""
@@ -47,19 +46,23 @@ class GeminiService:
         """
         
         try:
-            response = await self.model.generate_content_async(prompt)
-            # Clean up response to ensure it's valid JSON
-            text = response.text.replace('```json', '').replace('```', '')
-            return json.loads(text)
+            response = self.client.chat.complete(
+                model='mistral-large-latest',
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+            if response and response.choices:
+                return json.loads(response.choices[0].message.content)
+            return self._mock_recommendation(village_data)
         except Exception as e:
-            logging.error(f"Gemini API error: {e}")
+            logging.error(f"Mistral API error: {e}")
             return self._mock_recommendation(village_data)
 
     async def analyze_land_type(self, geo_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analyzes land type and suggests precautions.
         """
-        if not self.model:
+        if not self.client:
             return {"analysis": "Mock Analysis: Clay soil detected.", "precautions": ["Avoid deep excavation"]}
 
         prompt = f"""
@@ -69,11 +72,16 @@ class GeminiService:
         Return JSON with 'analysis' and 'precautions' keys.
         """
         try:
-            response = await self.model.generate_content_async(prompt)
-            text = response.text.replace('```json', '').replace('```', '')
-            return json.loads(text)
+            response = self.client.chat.complete(
+                model='mistral-large-latest',
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+            if response and response.choices:
+                return json.loads(response.choices[0].message.content)
+            return {"error": "Failed to analyze land type"}
         except Exception as e:
-            logging.error(f"Gemini API error: {e}")
+            logging.error(f"Mistral API error: {e}")
             return {"error": "Failed to analyze land type"}
 
     def _mock_recommendation(self, village_data) -> Dict[str, Any]:

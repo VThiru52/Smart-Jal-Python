@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # ML Models
     MODEL_PATH: str = "app/services/models"
     GEMINI_API_KEY: Optional[str] = None
+    MISTRAL_API_KEY: Optional[str] = None
     
     # OpenRouter
     OPENROUTER_API_KEY: Optional[str] = None

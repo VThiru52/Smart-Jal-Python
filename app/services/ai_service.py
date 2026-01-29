@@ -1,14 +1,13 @@
-from google import genai
-from google.genai import types
+from mistralai import Mistral
 import json
 from app.core.config import settings
 from typing import List, Dict, Any
 
 class AIService:
     def __init__(self):
-        self.api_key = settings.GEMINI_API_KEY
+        self.api_key = settings.MISTRAL_API_KEY
         if self.api_key:
-            self.client = genai.Client(api_key=self.api_key)
+            self.client = Mistral(api_key=self.api_key)
         else:
             self.client = None
 
@@ -61,22 +60,21 @@ class AIService:
         """
 
         try:
-            response = self.client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.9, # Increased for more creativity/variety
-                    top_p=0.95,
-                )
+            response = self.client.chat.complete(
+                model='mistral-large-latest',
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.9,
+                top_p=0.95,
             )
             
-            if response and response.text:
-                return json.loads(response.text)
+            if response and response.choices:
+                content = response.choices[0].message.content
+                return json.loads(content)
             else:
                 return self._get_fallback_recommendations(context)
         except Exception as e:
-            print(f"Gemini AI Error: {e}")
+            print(f"Mistral AI Error: {e}")
             return self._get_fallback_recommendations(context)
 
     def _get_fallback_recommendations(self, context: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -248,7 +246,7 @@ For the successful operation of **{title}** in {v_name}, farmers are advised to:
 
     async def generate_recommendation_blog(self, recommendation: Dict[str, Any], context: Dict[str, Any]) -> str:
         """
-        Generate a detailed, blog-post style article for a specific recommendation using Gemini AI.
+        Generate a detailed, blog-post style article for a specific recommendation using Mistral AI.
         Falls back to local structural generation if API is unavailable.
         """
         if not self.client:
@@ -297,21 +295,95 @@ For the successful operation of **{title}** in {v_name}, farmers are advised to:
         """
 
         try:
-            response = self.client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    top_p=0.9,
-                )
+            response = self.client.chat.complete(
+                model='mistral-large-latest',
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                top_p=0.9,
             )
             
-            if response and response.text:
-                return response.text
+            if response and response.choices:
+                return response.choices[0].message.content
             else:
                 return f"# {recommendation.get('title')}\n\n{recommendation.get('description')}"
         except Exception as e:
-            print(f"Gemini Blog Generation Error: {e}")
+            print(f"Mistral Blog Generation Error: {e}")
             return f"# {recommendation.get('title')}\n\n{recommendation.get('description')}\n\n*Note: Detailed analysis is currently delayed due to high traffic. Please try again in a few moments.*"
+
+    async def generate_structured_recommendation(self, recommendation: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generates the full structured dashboard JSON for a specific recommendation using Mistral AI.
+        Matches the schema of recommendationsData.json.
+        """
+        if not self.client:
+            return recommendation # Fallback to input
+
+        village = context.get('village', {})
+        soil = context.get('soil', {})
+        elevation = context.get('elevation', {})
+        risk = context.get('risk_context', {})
+
+        prompt = f"""
+        Role: Expert Hydrological Engineer
+        Task: Generate a technical dashboard JSON for the water management intervention: {recommendation.get('title')}.
+        Village Context: {village.get('name')}, {soil.get('soil_name')} soil, {elevation.get('elevation_m')}m elevation, {risk.get('status')} risk.
+
+        STRICT SCHEMA REQUIREMENT:
+        Return ONLY a JSON object with these keys:
+        {{
+            "overview": "Technical summary (2-3 sentences)",
+            "background": "Specific justification based on soil/elevation/risk (2 sentences)",
+            "technicalSpecifications": {{
+                "hydrology": {{ "Metric Name": "Value with unit", ... }},
+                "structures": {{ "Component": "Description", ... }},
+                "materials": {{ "Item": "Specification", ... }}
+            }},
+            "implementation": {{
+                "phases": [
+                    {{
+                        "phase": "Phase Name",
+                        "duration": "Length",
+                        "activities": ["Task 1", "Task 2"],
+                        "deliverables": ["Output 1"]
+                    }}
+                ]
+            }},
+            "expectedOutcomes": {{
+                "primary": ["Benefit 1", "Benefit 2"],
+                "secondary": ["Benefit 3"]
+            }},
+            "costBreakdown": {{
+                "Survey & Design": "₹ X,XX,XXX",
+                "Civil Works": "₹ X,XX,XXX",
+                "Materials": "₹ X,XX,XXX",
+                "total": "₹ X,XX,XXX"
+            }},
+            "farmerAdvisory": {{
+                "monsoon": "Instruction",
+                "summer": "Instruction"
+            }},
+            "riskMitigation": ["Safety/Maintenance measure 1"]
+        }}
+
+        Notes:
+        - Ensure costs are realistic for {recommendation.get('title')}.
+        - Phases should be 3 distinct stages.
+        - Outcoms should mention specific improvements to the village's water table.
+        """
+
+        try:
+            response = self.client.chat.complete(
+                model='mistral-large-latest',
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.7,
+            )
+            
+            if response and response.choices:
+                return json.loads(response.choices[0].message.content)
+            return recommendation
+        except Exception as e:
+            print(f"Mistral Structured Output Error: {e}")
+            return recommendation
 
 ai_service = AIService()
