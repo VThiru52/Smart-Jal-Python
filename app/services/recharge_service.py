@@ -2,6 +2,8 @@ from app.core.supabase import get_supabase_admin
 from typing import List, Dict
 import pandas as pd
 from app.services.audit_service import audit_service
+from app.services.ai_service import ai_service
+import asyncio
 
 class RechargeService:
     def __init__(self):
@@ -146,12 +148,79 @@ class RechargeService:
                     "priority_score": round(float(priority_score), 2),
                     "avg_depth_mbgl": round(float(avg_depth), 2),
                     "soil_type": village.get('soil_type') or "Unknown",
+                    "elevation": elevation,
+                    "mandal": village.get('mandal', 'Unknown'),
+                    "district": district,
                     "suggestions": suggestions_data,
+                    "is_ai_generated": False,
                     "suitability_rank": 1 if priority_score > 7 else (2 if priority_score > 4 else 3)
                 })
 
             # Sort by priority
             recommendations = sorted(recommendations, key=lambda x: x['priority_score'], reverse=True)
+
+            # --- DYNAMIC AI ENHANCEMENT FOR TOP 5 ---
+            top_5 = recommendations[:5]
+            
+            async def enhance_with_ai(rec):
+                try:
+                    context = {
+                        "village": {"name": rec["village_name"], "mandal": rec.get("mandal"), "district": rec.get("district")},
+                        "soil": {"soil_name": rec["soil_type"]},
+                        "elevation": {"elevation_m": rec["elevation"]},
+                        "risk_context": {"status": "CRITICAL" if rec["priority_score"] >= 7 else "MODERATE", "rainfall": 850}
+                    }
+                    
+                    ai_recs = await ai_service.generate_water_recommendations(context)
+                    if ai_recs and len(ai_recs) >= 3:
+                        formatted_suggestions = []
+                        for s in ai_recs[:3]:
+                            formatted_suggestions.append({
+                                "name": s.get("title", "Recharge Structure"),
+                                "advantages": s.get("description", "Scientific recharge implementation."),
+                                "disadvantages": f"Requires {s.get('impact', 'standard')} level maintenance and monitoring."
+                            })
+                        rec["suggestions"] = formatted_suggestions
+                        rec["is_ai_generated"] = True
+                except Exception as ai_err:
+                    print(f"⚠️ AI Enhancement failed for {rec['village_name']}: {ai_err}")
+                return rec
+
+            if top_5:
+                loop = asyncio.get_event_loop()
+                tasks = [enhance_with_ai(rec) for rec in top_5]
+                # Note: enhance_with_ai is async but calls a blocking method inside AIService.
+                # However, AIService's generate_water_recommendations is also async and mistakenly 
+                # calls a sync client. I'll wrap the AIService call in run_in_executor inside enhance_with_ai.
+                
+                async def enhanced_ai_wrapper(rec):
+                    try:
+                        context = {
+                            "village": {"name": rec["village_name"], "mandal": rec.get("mandal"), "district": rec.get("district")},
+                            "soil": {"soil_name": rec["soil_type"]},
+                            "elevation": {"elevation_m": rec["elevation"]},
+                            "risk_context": {"status": "CRITICAL" if rec["priority_score"] >= 7 else "MODERATE", "rainfall": 850}
+                        }
+                        # Run the blocking AI call in a thread pool
+                        ai_recs = await loop.run_in_executor(None, lambda: asyncio.run(ai_service.generate_water_recommendations(context)))
+                        if ai_recs and len(ai_recs) >= 3:
+                            formatted_suggestions = []
+                            for s in ai_recs[:3]:
+                                formatted_suggestions.append({
+                                    "name": s.get("title", "Recharge Structure"),
+                                    "advantages": s.get("description", "Scientific recharge implementation."),
+                                    "disadvantages": f"Requires {s.get('impact', 'standard')} level maintenance and monitoring."
+                                })
+                            rec["suggestions"] = formatted_suggestions
+                            rec["is_ai_generated"] = True
+                    except Exception as ai_err:
+                        print(f"⚠️ AI Enhancement failed for {rec['village_name']}: {ai_err}")
+                    return rec
+
+                tasks = [enhanced_ai_wrapper(rec) for rec in top_5]
+                enhanced_top_5 = await asyncio.gather(*tasks)
+                # Replace the original top 5 with enhanced ones
+                recommendations[:5] = enhanced_top_5
             
             return recommendations
         except Exception as e:
