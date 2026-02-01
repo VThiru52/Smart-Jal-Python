@@ -386,4 +386,25 @@ For the successful operation of **{title}** in {v_name}, farmers are advised to:
             print(f"Mistral Structured Output Error: {e}")
             return recommendation
 
+    async def generate_image_from_text(self, prompt: str) -> str:
+        """
+        Generates an image URL using Pollinations.ai (Open Source, Free).
+        No API key required.
+        """
+        try:
+            import urllib.parse
+            import random
+            
+            # Enhance prompt for better results
+            enhanced_prompt = f"realistic, high quality, 4k, drone view, water management, {prompt}"
+            encoded_prompt = urllib.parse.quote(enhanced_prompt)
+            
+            # Add a random seed to ensure variety even for same prompts
+            seed = random.randint(1, 10000)
+            
+            return f"https://image.pollinations.ai/prompt/{encoded_prompt}?seed={seed}&width=1280&height=720&nologo=true"
+        except Exception as e:
+            print(f"Image Generation Error: {e}")
+            return "https://images.unsplash.com/photo-1540324155974-7523202daa3f?auto=format&fit=crop&q=80&w=1200"
+
 ai_service = AIService()

@@ -184,10 +184,15 @@ class DroughtService:
             # 4. Generate structured dashboard and blog post
             # We run these in parallel for performance
             import asyncio
+            
+            # Generate dynamic image prompt
+            image_prompt = f"{target_rec.get('title')}, {village.get('name')} village, water conservation structure, photorealistic"
+            
             structured_task = ai_service.generate_structured_recommendation(target_rec, ai_context)
             blog_task = ai_service.generate_recommendation_blog(target_rec, ai_context)
+            image_task = ai_service.generate_image_from_text(image_prompt)
             
-            structured_data, blog_content = await asyncio.gather(structured_task, blog_task)
+            structured_data, blog_content, generated_image_url = await asyncio.gather(structured_task, blog_task, image_task)
 
             return {
                 "village_id": village_id,
@@ -197,8 +202,8 @@ class DroughtService:
                 "type": target_rec.get("type", "INTERVENTION"),
                 "impact": target_rec.get("impact", "MEDIUM"),
                 "hero": {
-                    "image": "https://images.unsplash.com/photo-1540324155974-7523202daa3f?auto=format&fit=crop&q=80&w=1200",
-                    "caption": f"Strategic intervention for {village['name']}."
+                    "image": generated_image_url,
+                    "caption": f"Visualisation of {recommendation_title} in {village['name']}."
                 }
             }
         except Exception as e:
