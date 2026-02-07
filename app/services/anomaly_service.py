@@ -113,7 +113,7 @@ class AnomalyService:
                 "updated_at": datetime.now().isoformat()
             }).eq("id", village_id).execute()
         except Exception as e:
-            logging.error(f"⚠️ Risk propagation error: {e}")
+            logging.error(f"Risk propagation error: {e}")
 
     async def log_anomaly(self, piezometer_id: str, date: str, value: float, expected: float, severity: str, desc: str):
         """Internal helper to insert anomaly record"""
@@ -128,6 +128,6 @@ class AnomalyService:
                 "is_resolved": False
             }).execute()
         except Exception as e:
-            logging.error(f"⚠️ Failed to log anomaly: {e}")
+            logging.error(f"Failed to log anomaly: {e}")
 
 anomaly_service = AnomalyService()
