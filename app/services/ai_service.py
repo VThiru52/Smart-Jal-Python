@@ -60,7 +60,7 @@ class AIService:
         """
 
         try:
-            response = self.client.chat.complete(
+            response = await self.client.chat.complete_async(
                 model='mistral-large-latest',
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
@@ -72,9 +72,10 @@ class AIService:
                 content = response.choices[0].message.content
                 return json.loads(content)
             else:
+                print(f"Mistral AI empty response for {village.get('name')}, using fallback")
                 return self._get_fallback_recommendations(context)
         except Exception as e:
-            print(f"Mistral AI Error: {e}")
+            print(f"Mistral AI Error for {village.get('name')}: {e}")
             return self._get_fallback_recommendations(context)
 
     def _get_fallback_recommendations(self, context: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -295,7 +296,7 @@ For the successful operation of **{title}** in {v_name}, farmers are advised to:
         """
 
         try:
-            response = self.client.chat.complete(
+            response = await self.client.chat.complete_async(
                 model='mistral-large-latest',
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
@@ -308,7 +309,7 @@ For the successful operation of **{title}** in {v_name}, farmers are advised to:
                 return f"# {recommendation.get('title')}\n\n{recommendation.get('description')}"
         except Exception as e:
             print(f"Mistral Blog Generation Error: {e}")
-            return f"# {recommendation.get('title')}\n\n{recommendation.get('description')}\n\n*Note: Detailed analysis is currently delayed due to high traffic. Please try again in a few moments.*"
+            return f"# {recommendation.get('title')}\n\n{recommendation.get('description')}\n\n*Note: Detailed analysis is currently delayed.*"
 
     async def generate_structured_recommendation(self, recommendation: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -372,7 +373,7 @@ For the successful operation of **{title}** in {v_name}, farmers are advised to:
         """
 
         try:
-            response = self.client.chat.complete(
+            response = await self.client.chat.complete_async(
                 model='mistral-large-latest',
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},

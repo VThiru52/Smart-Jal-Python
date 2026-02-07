@@ -44,7 +44,7 @@ class RechargeService:
             }
 
             # 2. Fetch Village data
-            print(f"📡 Fetching villages for district: {district}")
+            print(f"Fetching villages for district: {district}")
             villages_resp = self.supabase.table("villages").select(
                 "id, name, population, land_area_ha, soil_type, elevation_m" 
             ).eq("district", district).execute()
@@ -161,37 +161,8 @@ class RechargeService:
 
             # --- DYNAMIC AI ENHANCEMENT FOR TOP 5 ---
             top_5 = recommendations[:5]
-            
-            async def enhance_with_ai(rec):
-                try:
-                    context = {
-                        "village": {"name": rec["village_name"], "mandal": rec.get("mandal"), "district": rec.get("district")},
-                        "soil": {"soil_name": rec["soil_type"]},
-                        "elevation": {"elevation_m": rec["elevation"]},
-                        "risk_context": {"status": "CRITICAL" if rec["priority_score"] >= 7 else "MODERATE", "rainfall": 850}
-                    }
-                    
-                    ai_recs = await ai_service.generate_water_recommendations(context)
-                    if ai_recs and len(ai_recs) >= 3:
-                        formatted_suggestions = []
-                        for s in ai_recs[:3]:
-                            formatted_suggestions.append({
-                                "name": s.get("title", "Recharge Structure"),
-                                "advantages": s.get("description", "Scientific recharge implementation."),
-                                "disadvantages": f"Requires {s.get('impact', 'standard')} level maintenance and monitoring."
-                            })
-                        rec["suggestions"] = formatted_suggestions
-                        rec["is_ai_generated"] = True
-                except Exception as ai_err:
-                    print(f"⚠️ AI Enhancement failed for {rec['village_name']}: {ai_err}")
-                return rec
-
             if top_5:
-                loop = asyncio.get_event_loop()
-                tasks = [enhance_with_ai(rec) for rec in top_5]
-                # Note: enhance_with_ai is async but calls a blocking method inside AIService.
-                # However, AIService's generate_water_recommendations is also async and mistakenly 
-                # calls a sync client. I'll wrap the AIService call in run_in_executor inside enhance_with_ai.
+                # Optimized AI enhancement using parallel async tasks
                 
                 async def enhanced_ai_wrapper(rec):
                     try:
@@ -201,8 +172,8 @@ class RechargeService:
                             "elevation": {"elevation_m": rec["elevation"]},
                             "risk_context": {"status": "CRITICAL" if rec["priority_score"] >= 7 else "MODERATE", "rainfall": 850}
                         }
-                        # Run the blocking AI call in a thread pool
-                        ai_recs = await loop.run_in_executor(None, lambda: asyncio.run(ai_service.generate_water_recommendations(context)))
+                        # Use the async method directly
+                        ai_recs = await ai_service.generate_water_recommendations(context)
                         if ai_recs and len(ai_recs) >= 3:
                             formatted_suggestions = []
                             for s in ai_recs[:3]:
@@ -214,7 +185,7 @@ class RechargeService:
                             rec["suggestions"] = formatted_suggestions
                             rec["is_ai_generated"] = True
                     except Exception as ai_err:
-                        print(f"⚠️ AI Enhancement failed for {rec['village_name']}: {ai_err}")
+                        print(f"AI Enhancement failed for {rec['village_name']}: {ai_err}")
                     return rec
 
                 tasks = [enhanced_ai_wrapper(rec) for rec in top_5]
@@ -224,10 +195,7 @@ class RechargeService:
             
             return recommendations
         except Exception as e:
-            print(f"❌ Error in calculate_recharge_priorities: {e}")
-            return []
-        except Exception as e:
-            print(f"❌ Error in calculate_recharge_priorities: {e}")
+            print(f"Error in calculate_recharge_priorities: {e}")
             # If we calculated recommendations but failed later, return them if possible
             if 'recommendations' in locals() and recommendations:
                  return recommendations
