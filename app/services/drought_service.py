@@ -109,8 +109,15 @@ class DroughtService:
             risk_status = "MODERATE"
             try:
                 district = village.get("district", "Krishna")
-                district_risks = await self.assess_district_risk(district)
-                if district_risks:
+                # Normalize district for query
+                normalized_district = district.capitalize()
+                district_risks = await self.assess_district_risk(normalized_district)
+                
+                # If not found with capitalized, try UPPERCASE
+                if not district_risks or "error" in district_risks:
+                    district_risks = await self.assess_district_risk(district.upper())
+                
+                if district_risks and isinstance(district_risks, list):
                     v_risk = next((r for r in district_risks if r.get("id") == village_id), None)
                     if v_risk:
                         risk_status = v_risk.get("status", "MODERATE")

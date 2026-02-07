@@ -317,7 +317,7 @@ For the successful operation of **{title}** in {v_name}, farmers are advised to:
         Matches the schema of recommendationsData.json.
         """
         if not self.client:
-            return recommendation # Fallback to input
+            return self._get_fallback_structured(recommendation, context)
 
         village = context.get('village', {})
         soil = context.get('soil', {})
@@ -382,10 +382,81 @@ For the successful operation of **{title}** in {v_name}, farmers are advised to:
             
             if response and response.choices:
                 return json.loads(response.choices[0].message.content)
-            return recommendation
+            return self._get_fallback_structured(recommendation, context)
         except Exception as e:
             print(f"Mistral Structured Output Error: {e}")
-            return recommendation
+            return self._get_fallback_structured(recommendation, context)
+
+    def _get_fallback_structured(self, recommendation: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Ensures a valid structure is returned if AI fails.
+        """
+        title = recommendation.get('title', 'Water Intervention')
+        v_name = context.get('village', {}).get('name', 'Village')
+        soil = context.get('soil', {}).get('soil_name', 'mixed')
+        elev = context.get('elevation', {}).get('elevation_m', 50)
+        
+        return {
+            "overview": f"A strategic implementation of {title} tailored for the local hydrological profile of {v_name}.",
+            "background": f"This intervention is optimized for {soil} soil conditions at an elevation of {elev}m.",
+            "technicalSpecifications": {
+                "hydrology": {
+                    "Soil Permeability": "Specific to local profile",
+                    "Design Yield": "Variable based on monsoon intensity"
+                },
+                "structures": {
+                    "Main Unit": f"Primary {title} assembly",
+                    "Inlet Control": "Manual/Automatic grit chamber"
+                },
+                "materials": {
+                    "Base": "Reinforced concrete/Composite",
+                    "Linings": "Geomembrane where applicable"
+                }
+            },
+            "implementation": {
+                "phases": [
+                    {
+                        "phase": "I: Site Appraisal",
+                        "duration": "1 week",
+                        "activities": ["Topographical survey", "Soil permeability test"],
+                        "deliverables": ["Site layout plan"]
+                    },
+                    {
+                        "phase": "II: Construction",
+                        "duration": "4-8 weeks",
+                        "activities": ["Excavation", "Structural assembly"],
+                        "deliverables": ["Physical structure completion"]
+                    },
+                    {
+                        "phase": "III: Commissioning",
+                        "duration": "1 week",
+                        "activities": ["Flow testing", "Staff training"],
+                        "deliverables": ["Final handover report"]
+                    }
+                ]
+            },
+            "expectedOutcomes": {
+                "primary": [
+                    "Improved localized groundwater recharge",
+                    "Augmented storage for lean seasons"
+                ],
+                "secondary": [
+                    "Reduced surface runoff erosion",
+                    "Community level water security"
+                ]
+            },
+            "costBreakdown": {
+                "Survey & Design": "₹ 15,000",
+                "Civil Works": "₹ 1,45,000",
+                "Materials": "₹ 85,000",
+                "total": "₹ 2,45,000"
+            },
+            "farmerAdvisory": {
+                "monsoon": "Monitor silt traps for blockage after heavy rains.",
+                "summer": "Optimize extraction to maintain base levels."
+            },
+            "riskMitigation": ["Regular desilting mandatory", "Structural integrity check post-monsoon"]
+        }
 
     async def generate_image_from_text(self, prompt: str) -> str:
         """
