@@ -95,13 +95,28 @@ class DroughtService:
     async def get_village_recommendations(self, village_id: str, force_refresh: bool = False):
         """
         AI-driven intervention recommendations based on local characteristics using Gemini
-        Uses in-memory caching to avoid regenerating images on every request.
-        Set force_refresh=True to bypass cache and regenerate.
+        Uses Database persistence (Supabase) + In-memory caching to avoid regenerating images.
         """
-        # Check cache first (unless force_refresh is True)
+        # 1. Check in-memory cache first for speed
         if not force_refresh and village_id in self._recommendations_cache:
             return self._recommendations_cache[village_id]
         
+        # 2. Check Database persistence
+        if not force_refresh:
+            try:
+                print(f"Checking DB cache for village: {village_id}")
+                db_res = self.supabase.table("villages").select("recommendations_cache").eq("id", village_id).execute()
+                if db_res.data and db_res.data[0].get("recommendations_cache"):
+                    print(f"✅ Found DB cache for village: {village_id}")
+                    cached_data = db_res.data[0]["recommendations_cache"]
+                    # Update in-memory cache and return
+                    self._recommendations_cache[village_id] = cached_data
+                    return cached_data
+                else:
+                    print(f"ℹ️ No DB cache found for village: {village_id}")
+            except Exception as e:
+                print(f"❌ Database cache read error: {e}")
+
         try:
             # Get spatial context (soil, elevation)
             context = await spatial_service.get_village_spatial_context(village_id)
@@ -113,15 +128,12 @@ class DroughtService:
             elevation = context.get('elevation', {})
             
             # Prepare context for AI
-            # Get risk status dynamically
             risk_status = "MODERATE"
             try:
                 district = village.get("district", "Krishna")
-                # Normalize district for query
                 normalized_district = district.capitalize()
                 district_risks = await self.assess_district_risk(normalized_district)
                 
-                # If not found with capitalized, try UPPERCASE
                 if not district_risks or "error" in district_risks:
                     district_risks = await self.assess_district_risk(district.upper())
                 
@@ -148,13 +160,11 @@ class DroughtService:
             if isinstance(recommendations_data, list):
                 import asyncio
                 
-                # Helper to generate image and attach to recommendation
                 async def attach_image(rec):
                     image_prompt = f"{rec.get('title')}, {village.get('name')} village, water conservation structure, photorealistic"
                     rec['image'] = await ai_service.generate_image_from_text(image_prompt)
                     return rec
 
-                # Run image generation in parallel
                 recommendations = await asyncio.gather(*[attach_image(rec) for rec in recommendations_data])
             else:
                 recommendations = recommendations_data
@@ -163,11 +173,21 @@ class DroughtService:
                 "village_id": village_id,
                 "village_name": village['name'],
                 "risk_context": ai_context['risk_context'],
-                "recommendations": recommendations
+                "recommendations": recommendations,
+                "generated_at": pd.Timestamp.now().isoformat()
             }
             
-            # Cache the result for future requests
+            # 7. Update caches (In-memory + Database)
             self._recommendations_cache[village_id] = result
+            try:
+                print(f"Storing recommendations in DB for village: {village_id}")
+                update_res = self.supabase.table("villages").update({
+                    "recommendations_cache": result
+                }).eq("id", village_id).execute()
+                print(f"✅ DB Update response: {update_res.data}")
+            except Exception as e:
+                print(f"❌ Database cache write error: {e}")
+                
             return result
         except Exception as e:
             print(f"Error in get_village_recommendations: {e}")
@@ -206,18 +226,30 @@ class DroughtService:
             }
 
             # 3. Get the specific recommendation technical details
-            # CRITICAL: Check cache first to avoid regenerating all 3 images
-            # If cache exists, use it. If not, we'll just use the title/description for generation
-            # without calling get_village_recommendations() which would regenerate all images.
+            # CRITICAL: Check caches first to avoid regenerating all 3 images
             target_rec = None
             
-            # Check if we have cached recommendations (from previous evaluation)
+            # A. Check in-memory cache (fastest)
             if village_id in self._recommendations_cache:
                 cached_data = self._recommendations_cache[village_id]
                 if isinstance(cached_data, dict) and "recommendations" in cached_data:
                     target_rec = next((r for r in cached_data["recommendations"] if r.get("title") == recommendation_title), None)
 
-            # If no cached recommendation, create a minimal one for AI processing
+            # B. Check Database persistence if not in memory
+            if not target_rec:
+                try:
+                    db_res = self.supabase.table("villages").select("recommendations_cache").eq("id", village_id).execute()
+                    if db_res.data and db_res.data[0].get("recommendations_cache"):
+                        cached_data = db_res.data[0]["recommendations_cache"]
+                        # Populate in-memory cache for next time
+                        self._recommendations_cache[village_id] = cached_data
+                        
+                        if isinstance(cached_data, dict) and "recommendations" in cached_data:
+                            target_rec = next((r for r in cached_data["recommendations"] if r.get("title") == recommendation_title), None)
+                except Exception as e:
+                    print(f"Database cache read error in detail: {e}")
+
+            # C. Fallback: Create minimal one for AI generation
             if not target_rec:
                 target_rec = {
                     "title": recommendation_title,
