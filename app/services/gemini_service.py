@@ -1,16 +1,20 @@
-from mistralai import Mistral
+from google import genai
 from app.core.config import settings
 import logging
 import json
+import os
+import uuid
+import requests
 from typing import Dict, Any, List
 
 class GeminiService:
     def __init__(self):
-        self.api_key = settings.MISTRAL_API_KEY
+        self.api_key = settings.GEMINI_API_KEY
         if self.api_key:
-            self.client = Mistral(api_key=self.api_key)
+            # Using the newer google-genai SDK with v1beta version for Imagen support
+            self.client = genai.Client(api_key=self.api_key, http_options={'api_version': 'v1beta'})
         else:
-            logging.warning("MISTRAL_API_KEY not found. AI features will use mock responses.")
+            logging.warning("GEMINI_API_KEY not found. AI features will use mock responses.")
             self.client = None
 
     async def generate_solution_recommendation(
@@ -36,7 +40,7 @@ class GeminiService:
         - Construct check dam (if gradient > 5%)
         - Build pond (if clay soil present)
         
-        Output valid JSON with the following keys:
+        Output MUST be valid JSON with ONLY the following keys:
         - recommendation: str
         - reason: str
         - cost_estimate: str
@@ -46,16 +50,18 @@ class GeminiService:
         """
         
         try:
-            response = self.client.chat.complete(
-                model='mistral-large-latest',
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
+            response = self.client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=prompt,
+                config={
+                    'response_mime_type': 'application/json',
+                }
             )
-            if response and response.choices:
-                return json.loads(response.choices[0].message.content)
+            if response and response.text:
+                return json.loads(response.text)
             return self._mock_recommendation(village_data)
         except Exception as e:
-            logging.error(f"Mistral API error: {e}")
+            logging.error(f"Gemini API error (recommendation): {e}")
             return self._mock_recommendation(village_data)
 
     async def analyze_land_type(self, geo_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -72,17 +78,122 @@ class GeminiService:
         Return JSON with 'analysis' and 'precautions' keys.
         """
         try:
-            response = self.client.chat.complete(
-                model='mistral-large-latest',
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
+            response = self.client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=prompt,
+                config={
+                    'response_mime_type': 'application/json',
+                }
             )
-            if response and response.choices:
-                return json.loads(response.choices[0].message.content)
+            if response and response.text:
+                return json.loads(response.text)
             return {"error": "Failed to analyze land type"}
         except Exception as e:
-            logging.error(f"Mistral API error: {e}")
+            logging.error(f"Gemini API error (land_type): {e}")
             return {"error": "Failed to analyze land type"}
+
+    async def generate_image_from_text(self, prompt: str) -> str:
+        """
+        Generates an image using Gemini's Imagen 3 model and saves it locally.
+        Returns the local URL for the image.
+        """
+        if not self.api_key:
+            logging.warning("GEMINI_API_KEY not found for image generation. Using fallback.")
+            return self._get_pollination_fallback(prompt)
+
+        try:
+            # Using imagen-4.0-fast-generate-001 for higher quota limits (10/day Fast tier)
+            response = self.client.models.generate_image(
+                model='imagen-4.0-fast-generate-001',
+                prompt=f"realistic, high quality, 4k, drone view, water management, {prompt}",
+                config={
+                    'number_of_images': 1,
+                }
+            )
+            
+            if response and response.generated_images:
+                # Create directory if it doesn't exist
+                static_dir = os.path.join("app", "static", "generated_images")
+                os.makedirs(static_dir, exist_ok=True)
+                
+                # Generate a unique filename
+                filename = f"{uuid.uuid4()}.png"
+                file_path = os.path.join(static_dir, filename)
+                
+                # Save the image using the PIL Image object returned by the SDK
+                response.generated_images[0].image.save(file_path)
+                
+                return f"/static/generated_images/{filename}"
+                
+            logging.warning("No images found in Gemini response. Using Pollinations fallback.")
+            return self._get_pollination_fallback(prompt)
+            
+        except Exception as e:
+            # Check for quota exhaustion (429) or other API errors
+            error_msg = str(e)
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                logging.warning(f"Gemini Image Quota Exceeded (Limit 70/day). Switching to Hugging Face fallback.")
+            else:
+                logging.error(f"Gemini Image API error: {e}")
+            
+            # Try Hugging Face first as requested by user
+            hf_image = self._generate_huggingface_image(prompt)
+            if hf_image:
+                return hf_image
+                
+            return self._get_pollination_fallback(prompt)
+
+    def _generate_huggingface_image(self, prompt: str) -> str:
+        """
+        Generates image using Hugging Face Inference API (Stable Diffusion XL).
+        Saves locally and returns local URL.
+        """
+        api_key = settings.HUGGINGFACE_API_KEY
+        if not api_key:
+            return None
+            
+        API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        
+        enhanced_prompt = f"realistic, high quality, 4k, drone view, water management, {prompt}, rural india context"
+
+        try:
+            logging.info(f"Attempting Hugging Face generation for: {prompt}")
+            response = requests.post(API_URL, headers=headers, json={"inputs": enhanced_prompt}, timeout=30)
+            
+            if response.status_code == 200:
+                # Save image locally
+                static_dir = os.path.join("app", "static", "generated_images")
+                os.makedirs(static_dir, exist_ok=True)
+                
+                filename = f"hf_{uuid.uuid4()}.png"
+                file_path = os.path.join(static_dir, filename)
+                
+                with open(file_path, "wb") as f:
+                    f.write(response.content)
+                    
+                return f"/static/generated_images/{filename}"
+            else:
+                logging.warning(f"Hugging Face API failed: {response.text}")
+                return None
+        except Exception as e:
+            logging.error(f"Hugging Face execution error: {e}")
+            return None
+
+    def _get_pollination_fallback(self, prompt: str) -> str:
+        """
+        Generates a high-quality alternative image URL using Pollinations.ai.
+        """
+        import urllib.parse
+        import random
+        
+        # Enhanced prompt engineering for Pollinations/Stable Diffusion
+        enhanced_prompt = f"cinematic drone shot of {prompt}, rural india village context, water conservation structure, 8k resolution, highly detailed, photorealistic, golden hour lighting, lush greenery"
+        encoded_prompt = urllib.parse.quote(enhanced_prompt)
+        seed = random.randint(1, 100000)
+        
+        # Using a fixed seed for consistent variety but better quality control could be added
+        return f"https://image.pollinations.ai/prompt/{encoded_prompt}?seed={seed}&width=1280&height=720&nologo=true&model=flux"
 
     def _mock_recommendation(self, village_data) -> Dict[str, Any]:
         return {

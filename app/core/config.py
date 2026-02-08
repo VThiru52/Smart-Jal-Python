@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_MODEL: Optional[str] = "qwen/qwen-2-7b-instruct:free"
     
+    # HuggingFace
+    HUGGINGFACE_API_KEY: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

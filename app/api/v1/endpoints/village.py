@@ -92,23 +92,11 @@ async def get_comprehensive_village_details(village_id: str):
     except Exception as e:
         print(f"Error getting risk assessment: {e}")
     
-    # Get AI recommendations
+    # AI recommendations - ONLY if specifically requested or already cached in DB (omitted here for manual trigger)
     ai_recommendations = None
-    try:
-        recommendations = await drought_service.get_village_recommendations(village_id)
-        if recommendations and "error" not in recommendations:
-            ai_recommendations = recommendations
-    except Exception as e:
-        print(f"Error getting AI recommendations: {e}")
     
-    # Get forecast data
+    # Forecast data - ONLY if specifically requested
     forecast_data = None
-    try:
-        forecast_data = await forecasting_service.generate_forecast(village_id, 12)
-        if forecast_data and "error" in forecast_data:
-            forecast_data = None
-    except Exception as e:
-        print(f"Error getting forecast: {e}")
     
     # Use database values directly (already populated)
     # Fallback to total_area_ha if land_area_ha is not set (backward compatibility)

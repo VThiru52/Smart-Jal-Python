@@ -9,6 +9,8 @@ import numpy as np
 class DroughtService:
     def __init__(self):
         self.supabase = get_supabase_admin()
+        # In-memory cache for recommendations to avoid regenerating images
+        self._recommendations_cache = {}
 
     async def assess_district_risk(self, district: str = "Krishna"):
         """
@@ -90,10 +92,16 @@ class DroughtService:
             print(f"Error in assess_district_risk: {e}")
             return {"error": str(e)}
 
-    async def get_village_recommendations(self, village_id: str):
+    async def get_village_recommendations(self, village_id: str, force_refresh: bool = False):
         """
         AI-driven intervention recommendations based on local characteristics using Gemini
+        Uses in-memory caching to avoid regenerating images on every request.
+        Set force_refresh=True to bypass cache and regenerate.
         """
+        # Check cache first (unless force_refresh is True)
+        if not force_refresh and village_id in self._recommendations_cache:
+            return self._recommendations_cache[village_id]
+        
         try:
             # Get spatial context (soil, elevation)
             context = await spatial_service.get_village_spatial_context(village_id)
@@ -133,15 +141,34 @@ class DroughtService:
                     "rainfall": village.get('average_rainfall_mm') or 850.0
                 }
             }
+            # 5. Generate recommendations
+            recommendations_data = await ai_service.generate_water_recommendations(ai_context)
             
-            recommendations = await ai_service.generate_water_recommendations(ai_context)
+            # 6. Generate images for each recommendation in parallel
+            if isinstance(recommendations_data, list):
+                import asyncio
+                
+                # Helper to generate image and attach to recommendation
+                async def attach_image(rec):
+                    image_prompt = f"{rec.get('title')}, {village.get('name')} village, water conservation structure, photorealistic"
+                    rec['image'] = await ai_service.generate_image_from_text(image_prompt)
+                    return rec
 
-            return {
+                # Run image generation in parallel
+                recommendations = await asyncio.gather(*[attach_image(rec) for rec in recommendations_data])
+            else:
+                recommendations = recommendations_data
+
+            result = {
                 "village_id": village_id,
                 "village_name": village['name'],
                 "risk_context": ai_context['risk_context'],
                 "recommendations": recommendations
             }
+            
+            # Cache the result for future requests
+            self._recommendations_cache[village_id] = result
+            return result
         except Exception as e:
             print(f"Error in get_village_recommendations: {e}")
             return {"error": str(e)}
@@ -179,27 +206,42 @@ class DroughtService:
             }
 
             # 3. Get the specific recommendation technical details
-            # We fetch all recommendations and find the one with the matching title
-            all_recs = await self.get_village_recommendations(village_id)
+            # CRITICAL: Check cache first to avoid regenerating all 3 images
+            # If cache exists, use it. If not, we'll just use the title/description for generation
+            # without calling get_village_recommendations() which would regenerate all images.
             target_rec = None
-            if isinstance(all_recs, dict) and "recommendations" in all_recs:
-                target_rec = next((r for r in all_recs["recommendations"] if r.get("title") == recommendation_title), None)
             
+            # Check if we have cached recommendations (from previous evaluation)
+            if village_id in self._recommendations_cache:
+                cached_data = self._recommendations_cache[village_id]
+                if isinstance(cached_data, dict) and "recommendations" in cached_data:
+                    target_rec = next((r for r in cached_data["recommendations"] if r.get("title") == recommendation_title), None)
+
+            # If no cached recommendation, create a minimal one for AI processing
             if not target_rec:
-                target_rec = {"title": recommendation_title, "description": "Analyzing intervention details..."}
+                target_rec = {
+                    "title": recommendation_title,
+                    "description": f"Water conservation intervention: {recommendation_title}"
+                }
 
             # 4. Generate structured dashboard and blog post
             # We run these in parallel for performance
             import asyncio
             
-            # Generate dynamic image prompt
-            image_prompt = f"{target_rec.get('title')}, {village.get('name')} village, water conservation structure, photorealistic"
-            
             structured_task = ai_service.generate_structured_recommendation(target_rec, ai_context)
             blog_task = ai_service.generate_recommendation_blog(target_rec, ai_context)
-            image_task = ai_service.generate_image_from_text(image_prompt)
             
-            structured_data, blog_content, generated_image_url = await asyncio.gather(structured_task, blog_task, image_task)
+            # IMPORTANT: Reuse existing image from evaluation to avoid wasting API credits
+            # Only generate a new image if one doesn't exist (e.g., fallback case)
+            if target_rec and target_rec.get('image'):
+                # Image already exists from evaluation - reuse it!
+                generated_image_url = target_rec['image']
+                structured_data, blog_content = await asyncio.gather(structured_task, blog_task)
+            else:
+                # No cached image found, generate a new one
+                image_prompt = f"{target_rec.get('title')}, {village.get('name')} village, water conservation structure, photorealistic"
+                image_task = ai_service.generate_image_from_text(image_prompt)
+                structured_data, blog_content, generated_image_url = await asyncio.gather(structured_task, blog_task, image_task)
 
             return {
                 "village_id": village_id,

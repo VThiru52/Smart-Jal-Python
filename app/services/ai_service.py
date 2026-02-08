@@ -460,21 +460,11 @@ For the successful operation of **{title}** in {v_name}, farmers are advised to:
 
     async def generate_image_from_text(self, prompt: str) -> str:
         """
-        Generates an image URL using Pollinations.ai (Open Source, Free).
-        No API key required.
+        Generates an image using Gemini API via GeminiService.
         """
         try:
-            import urllib.parse
-            import random
-            
-            # Enhance prompt for better results
-            enhanced_prompt = f"realistic, high quality, 4k, drone view, water management, {prompt}"
-            encoded_prompt = urllib.parse.quote(enhanced_prompt)
-            
-            # Add a random seed to ensure variety even for same prompts
-            seed = random.randint(1, 10000)
-            
-            return f"https://image.pollinations.ai/prompt/{encoded_prompt}?seed={seed}&width=1280&height=720&nologo=true"
+            from app.services.gemini_service import gemini_service
+            return await gemini_service.generate_image_from_text(prompt)
         except Exception as e:
             print(f"Image Generation Error: {e}")
             return "https://images.unsplash.com/photo-1540324155974-7523202daa3f?auto=format&fit=crop&q=80&w=1200"
