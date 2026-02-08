@@ -5,6 +5,8 @@ import json
 import os
 import uuid
 import requests
+import base64
+import io
 from typing import Dict, Any, List
 
 class GeminiService:
@@ -112,18 +114,12 @@ class GeminiService:
             )
             
             if response and response.generated_images:
-                # Create directory if it doesn't exist
-                static_dir = os.path.join("app", "static", "generated_images")
-                os.makedirs(static_dir, exist_ok=True)
-                
-                # Generate a unique filename
-                filename = f"{uuid.uuid4()}.png"
-                file_path = os.path.join(static_dir, filename)
-                
-                # Save the image using the PIL Image object returned by the SDK
-                response.generated_images[0].image.save(file_path)
-                
-                return f"/static/generated_images/{filename}"
+                # Convert PIL Image to Base64
+                img = response.generated_images[0].image
+                buffered = io.BytesIO()
+                img.save(buffered, format="PNG")
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                return f"data:image/png;base64,{img_str}"
                 
             logging.warning("No images found in Gemini response. Using Pollinations fallback.")
             return self._get_pollination_fallback(prompt)
@@ -162,17 +158,9 @@ class GeminiService:
             response = requests.post(API_URL, headers=headers, json={"inputs": enhanced_prompt}, timeout=30)
             
             if response.status_code == 200:
-                # Save image locally
-                static_dir = os.path.join("app", "static", "generated_images")
-                os.makedirs(static_dir, exist_ok=True)
-                
-                filename = f"hf_{uuid.uuid4()}.png"
-                file_path = os.path.join(static_dir, filename)
-                
-                with open(file_path, "wb") as f:
-                    f.write(response.content)
-                    
-                return f"/static/generated_images/{filename}"
+                # Convert response content to Base64
+                img_str = base64.b64encode(response.content).decode()
+                return f"data:image/png;base64,{img_str}"
             else:
                 logging.warning(f"Hugging Face API failed: {response.text}")
                 return None
