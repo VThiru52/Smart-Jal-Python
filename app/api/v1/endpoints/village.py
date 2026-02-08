@@ -95,8 +95,21 @@ async def get_comprehensive_village_details(village_id: str):
     # AI recommendations - ONLY if specifically requested or already cached in DB (omitted here for manual trigger)
     ai_recommendations = None
     
-    # Forecast data - ONLY if specifically requested
+    # Forecast data - Fetch existing if available
     forecast_data = None
+    try:
+        forecast_result = supabase.table("forecasts").select("*").eq("village_id", village_id).order("target_date", desc=False).limit(12).execute()
+        if forecast_result.data:
+            forecast_data = {
+                "village_id": village_id,
+                "forecasts": forecast_result.data,
+                "explainability": {
+                    "type": "Trend Analysis (Linear)",
+                    "note": "Previously generated forecast retrieved from database."
+                }
+            }
+    except Exception as e:
+        print(f"Error fetching forecast data: {e}")
     
     # Use database values directly (already populated)
     # Fallback to total_area_ha if land_area_ha is not set (backward compatibility)
