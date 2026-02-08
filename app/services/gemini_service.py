@@ -114,12 +114,27 @@ class GeminiService:
             )
             
             if response and response.generated_images:
-                # Convert PIL Image to Base64
-                img = response.generated_images[0].image
-                buffered = io.BytesIO()
-                img.save(buffered, format="PNG")
-                img_str = base64.b64encode(buffered.getvalue()).decode()
-                return f"data:image/png;base64,{img_str}"
+                # Convert PIL Image or bytes to Base64
+                img_data = response.generated_images[0].image
+                
+                # Robust conversion
+                try:
+                    buffered = io.BytesIO()
+                    # Some SDK versions or environments might return bytes instead of PIL Image
+                    if isinstance(img_data, bytes):
+                        buffered.write(img_data)
+                    else:
+                        # Assume it's a PIL Image or something with .save()
+                        # Use positional format for better compatibility
+                        img_data.save(buffered, "PNG")
+                    
+                    img_str = base64.b64encode(buffered.getvalue()).decode()
+                    return f"data:image/png;base64,{img_str}"
+                except Exception as save_err:
+                    logging.error(f"Error converting Gemini image to Base64: {save_err}")
+                    logging.info(f"Image object type: {type(img_data)}")
+                    # Fallback to pollinations if conversion fails
+                    return self._get_pollination_fallback(prompt)
                 
             logging.warning("No images found in Gemini response. Using Pollinations fallback.")
             return self._get_pollination_fallback(prompt)
