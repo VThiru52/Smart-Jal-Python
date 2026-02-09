@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
+import asyncio
+
 from app.schemas import Village, Forecast
 from app.core.supabase import get_supabase, get_supabase_admin
 from app.services.audit_service import audit_service
@@ -92,23 +94,24 @@ async def get_comprehensive_village_details(village_id: str):
     except Exception as e:
         print(f"Error getting risk assessment: {e}")
     
-    # Get AI recommendations
+    # AI recommendations - ONLY if specifically requested or already cached in DB (omitted here for manual trigger)
     ai_recommendations = None
-    try:
-        recommendations = await drought_service.get_village_recommendations(village_id)
-        if recommendations and "error" not in recommendations:
-            ai_recommendations = recommendations
-    except Exception as e:
-        print(f"Error getting AI recommendations: {e}")
     
-    # Get forecast data
+    # Forecast data - Fetch existing if available
     forecast_data = None
     try:
-        forecast_data = await forecasting_service.generate_forecast(village_id, 12)
-        if forecast_data and "error" in forecast_data:
-            forecast_data = None
+        forecast_result = supabase.table("forecasts").select("*").eq("village_id", village_id).order("target_date", desc=False).limit(12).execute()
+        if forecast_result.data:
+            forecast_data = {
+                "village_id": village_id,
+                "forecasts": forecast_result.data,
+                "explainability": {
+                    "type": "Trend Analysis (Linear)",
+                    "note": "Previously generated forecast retrieved from database."
+                }
+            }
     except Exception as e:
-        print(f"Error getting forecast: {e}")
+        print(f"Error fetching forecast data: {e}")
     
     # Use database values directly (already populated)
     # Fallback to total_area_ha if land_area_ha is not set (backward compatibility)
@@ -294,55 +297,83 @@ async def evaluate_village_comprehensive(village_id: str):
         results["data"]["village"] = village
         results["steps_completed"].append("village_info")
         
-        # Step 2: Generate Forecast (12 months)
-        try:
-            forecast_result = await forecasting_service.generate_forecast(village_id, 12)
-            if forecast_result and "error" not in forecast_result:
-                results["data"]["forecast"] = forecast_result
-                results["steps_completed"].append("forecast")
-            else:
-                results["steps_failed"].append({"step": "forecast", "error": forecast_result.get("error", "Unknown error")})
-        except Exception as e:
-            results["steps_failed"].append({"step": "forecast", "error": str(e)})
+        # Parallel Execution Phase
+        # We group tasks that are independent
+        tasks = {
+            "forecast": forecasting_service.generate_forecast(village_id, 12),
+            "drought_assessment": drought_service.assess_district_risk(district),
+            "ai_recommendations": drought_service.get_village_recommendations(village_id),
+            "recharge_plan": recharge_service.calculate_recharge_priorities(district),
+            "spatial_context": spatial_service.get_village_spatial_context(village_id)
+        }
         
-        # Step 3: Get Drought Risk Assessment
-        try:
-            district_risks = await drought_service.assess_district_risk(district)
-            if isinstance(district_risks, list):
-                village_risk = next((r for r in district_risks if r.get("id") == village_id), None)
-                if village_risk:
-                    results["data"]["drought_assessment"] = {
-                        "risk_score": village_risk.get("risk_score"),
-                        "status": village_risk.get("status"),
-                        "color": village_risk.get("color"),
-                        "metrics": village_risk.get("metrics", {}),
-                        "reasons": _get_risk_reasons(village_risk)
-                    }
-                    results["steps_completed"].append("drought_assessment")
-        except Exception as e:
-            results["steps_failed"].append({"step": "drought_assessment", "error": str(e)})
+        # Execute tasks in parallel
+        task_names = list(tasks.keys())
+        task_coros = list(tasks.values())
         
-        # Step 4: Get AI Recommendations
-        try:
-            recommendations = await drought_service.get_village_recommendations(village_id)
-            if recommendations and "error" not in recommendations:
-                results["data"]["ai_recommendations"] = recommendations
-                results["steps_completed"].append("ai_recommendations")
-            else:
-                results["steps_failed"].append({"step": "ai_recommendations", "error": recommendations.get("error", "Unknown error") if isinstance(recommendations, dict) else "Failed"})
-        except Exception as e:
-            results["steps_failed"].append({"step": "ai_recommendations", "error": str(e)})
+        task_results = await asyncio.gather(*task_coros, return_exceptions=True)
         
-        # Step 5: Get Recharge Plan
-        try:
-            recharge_priorities = await recharge_service.calculate_recharge_priorities(district)
-            if isinstance(recharge_priorities, list):
-                village_recharge = next((r for r in recharge_priorities if r.get("village_id") == village_id), None)
-                if village_recharge:
-                    results["data"]["recharge_plan"] = village_recharge
-                    results["steps_completed"].append("recharge_plan")
-        except Exception as e:
-            results["steps_failed"].append({"step": "recharge_plan", "error": str(e)})
+        # Map results to task names
+        results_map = dict(zip(task_names, task_results))
+        
+        # Process Results
+        
+        # 1. Forecast
+        f_res = results_map["forecast"]
+        if isinstance(f_res, dict) and "error" not in f_res:
+            results["data"]["forecast"] = f_res
+            results["steps_completed"].append("forecast")
+        elif isinstance(f_res, Exception):
+            results["steps_failed"].append({"step": "forecast", "error": str(f_res)})
+        else:
+            results["steps_failed"].append({"step": "forecast", "error": f_res.get("error") if isinstance(f_res, dict) else "Unknown error"})
+
+        # 2. Drought Assessment
+        d_res = results_map["drought_assessment"]
+        if isinstance(d_res, list):
+            village_risk = next((r for r in d_res if r.get("id") == village_id), None)
+            if village_risk:
+                results["data"]["drought_assessment"] = {
+                    "risk_score": village_risk.get("risk_score"),
+                    "status": village_risk.get("status"),
+                    "color": village_risk.get("color"),
+                    "metrics": village_risk.get("metrics", {}),
+                    "reasons": _get_risk_reasons(village_risk)
+                }
+                results["steps_completed"].append("drought_assessment")
+        elif isinstance(d_res, Exception):
+            results["steps_failed"].append({"step": "drought_assessment", "error": str(d_res)})
+
+        # 3. AI Recommendations
+        r_res = results_map["ai_recommendations"]
+        if isinstance(r_res, dict) and "error" not in r_res:
+            results["data"]["ai_recommendations"] = r_res
+            results["steps_completed"].append("ai_recommendations")
+        elif isinstance(r_res, Exception):
+            results["steps_failed"].append({"step": "ai_recommendations", "error": str(r_res)})
+        else:
+            results["steps_failed"].append({"step": "ai_recommendations", "error": "Internal Error"})
+
+        # 4. Recharge Plan
+        rc_res = results_map["recharge_plan"]
+        if isinstance(rc_res, list):
+            village_recharge = next((r for r in rc_res if r.get("village_id") == village_id), None)
+            if village_recharge:
+                results["data"]["recharge_plan"] = village_recharge
+                results["steps_completed"].append("recharge_plan")
+        elif isinstance(rc_res, Exception):
+            results["steps_failed"].append({"step": "recharge_plan", "error": str(rc_res)})
+
+        # 5. Spatial Context
+        s_res = results_map["spatial_context"]
+        if isinstance(s_res, dict) and "error" not in s_res:
+            results["data"]["spatial_context"] = s_res
+            results["steps_completed"].append("spatial_context")
+        elif isinstance(s_res, Exception):
+            results["steps_failed"].append({"step": "spatial_context", "error": str(s_res)})
+
+        # Sequential steps for database-heavy tasks that are fast
+        # (These remain separate for now to avoid overloading Supabase connection pool)
         
         # Step 6: Get Pumping Data
         try:
@@ -350,7 +381,6 @@ async def evaluate_village_comprehensive(village_id: str):
                 pumping_result = supabase.table("pumping_data").select("*").eq("village", village_name).execute()
                 if pumping_result.data:
                     results["data"]["pumping_data"] = pumping_result.data
-                    # Calculate summary
                     df_pumping = pd.DataFrame(pumping_result.data)
                     results["data"]["pumping_summary"] = {
                         "total_records": len(pumping_result.data),
@@ -363,21 +393,13 @@ async def evaluate_village_comprehensive(village_id: str):
         except Exception as e:
             results["steps_failed"].append({"step": "pumping_data", "error": str(e)})
         
-        # Step 7: Get Spatial Context
-        try:
-            spatial_context = await spatial_service.get_village_spatial_context(village_id)
-            if spatial_context and "error" not in spatial_context:
-                results["data"]["spatial_context"] = spatial_context
-                results["steps_completed"].append("spatial_context")
-        except Exception as e:
-            results["steps_failed"].append({"step": "spatial_context", "error": str(e)})
-        
-        # Step 8: Get Latest Readings
+        # Step 7: Get Latest Readings
         try:
             piezometers = supabase.table("piezometers").select("*").eq("village_id", village_id).execute()
             if piezometers.data:
                 all_readings = []
-                for piezo in piezometers.data:
+                # Simple optimization: limit number of piezometers checked
+                for piezo in piezometers.data[:3]: 
                     reading = supabase.table("readings").select("*").eq("piezometer_id", piezo["id"]).order("reading_date", desc=True).limit(20).execute()
                     if reading.data:
                         all_readings.extend(reading.data)

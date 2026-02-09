@@ -57,9 +57,31 @@ class ForecastingService:
         n = len(x)
         
         slope, intercept = 0, y.mean()
+        r_squared = 0
+        rmse = 0 # Initialize RMSE
         if n > 1:
-            slope = (n * np.sum(x*y) - np.sum(x)*np.sum(y)) / (n * np.sum(x**2) - (np.sum(x))**2)
-            intercept = (np.sum(y) - slope * np.sum(x)) / n
+            denominator = (n * np.sum(x**2) - (np.sum(x))**2)
+            if denominator != 0:
+                slope = (n * np.sum(x*y) - np.sum(x)*np.sum(y)) / denominator
+                intercept = (np.sum(y) - slope * np.sum(x)) / n
+                
+                # Calculate R-squared to determine model fit
+                y_pred = slope * x + intercept
+                res = y - y_pred
+                ss_res = np.sum(res**2)
+                ss_tot = np.sum((y - np.mean(y))**2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                
+                # Calculate RMSE for confidence intervals
+                rmse = np.sqrt(ss_res / n) if n > 0 else 0
+
+        # Create a dynamic base confidence based on model fit and data quantity
+        # Ranges from 0.90 to 0.98 initially
+        base_confidence = 0.92 + (max(0, min(0.06, r_squared * 0.06)))
+        if n < 5:
+            base_confidence -= 0.02
+        elif n > 20:
+            base_confidence += 0.02
 
         # 3. Generate future points
         last_date = df['ds'].max()
@@ -73,6 +95,15 @@ class ForecastingService:
             seasonal_offset = 2.0 * np.sin(2 * np.pi * target_date.month / 12.0)
             predicted_value = slope * target_num + intercept + seasonal_offset
             
+            # Uncertainty increases as we project further into the future
+            # Link the visual band width to the confidence score (lower confidence = wider band)
+            conf_score = max(0.88, min(1.0, base_confidence - (i * 0.005)))
+            
+            # Map 0.88-1.0 confidence to a multiplier (e.g., 1.5 to 3.0 RMSE)
+            # Higher confidence score results in a lower multiplier (tighter band)
+            z_score = 1.645 + (1.0 - conf_score) * 10.0 # Dynamic multiplier
+            uncertainty_factor = z_score * rmse * (1 + 0.08 * i)
+            
             # Ensure value is realistic (MBGL usually positive)
             predicted_value = max(0.1, predicted_value)
 
@@ -81,13 +112,27 @@ class ForecastingService:
                 "forecast_date": datetime.now().strftime("%Y-%m-%d"),
                 "target_date": target_date.strftime("%Y-%m-%d"),
                 "predicted_level_mbgl": float(predicted_value),
-                "confidence_score": 0.85 - (i * 0.02), # Decaying confidence
+                "yhat_upper": float(predicted_value + uncertainty_factor),
+                "yhat_lower": float(max(0.1, predicted_value - uncertainty_factor)),
+                "confidence_score": conf_score, # Synced 88-100% range
                 "shap_explanation": None,
                 "model_version": "v1.2-Lightweight"
             })
         
-        # Store in Supabase
-        self.supabase.table("forecasts").insert(forecast_entries).execute()
+        # Store in Supabase - Exclude columns that don't exist in schema yet
+        try:
+            db_entries = []
+            for entry in forecast_entries:
+                db_copy = entry.copy()
+                # Remove transient fields that don't exist in Supabase yet
+                db_copy.pop("yhat_upper", None)
+                db_copy.pop("yhat_lower", None)
+                db_entries.append(db_copy)
+                
+            self.supabase.table("forecasts").insert(db_entries).execute()
+        except Exception as e:
+            logger.error(f"Failed to store forecasts in Supabase: {e}")
+            # Continue anyway so user gets their results
 
         return {
             "village_id": village_id,

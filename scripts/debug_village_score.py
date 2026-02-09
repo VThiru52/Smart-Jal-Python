@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
 async def debug_village_score(v_name):
-    print(f"🕵️ Analyzing {v_name}...")
+    print(f"--- Analyzing {v_name} ---")
     s = get_supabase_admin()
     
     # 1. Village Info
