@@ -4,6 +4,7 @@ import pandas as pd
 from app.services.audit_service import audit_service
 from app.services.ai_service import ai_service
 import asyncio
+import math
 
 class RechargeService:
     def __init__(self):
@@ -192,8 +193,18 @@ class RechargeService:
                 enhanced_top_5 = await asyncio.gather(*tasks)
                 # Replace the original top 5 with enhanced ones
                 recommendations[:5] = enhanced_top_5
-            
-            return recommendations
+
+            # Sanitize out-of-range float values to ensure JSON-serializable output
+            sanitized: List[Dict] = []
+            for rec in recommendations:
+                rec_copy = dict(rec)
+                for key in ("priority_score", "avg_depth_mbgl", "elevation"):
+                    val = rec_copy.get(key)
+                    if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                        rec_copy[key] = None
+                sanitized.append(rec_copy)
+
+            return sanitized
         except Exception as e:
             print(f"Error in calculate_recharge_priorities: {e}")
             # If we calculated recommendations but failed later, return them if possible
