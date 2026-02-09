@@ -99,60 +99,77 @@ class GeminiService:
         Generates an image using Gemini's Imagen 3 model and saves it locally.
         Returns the local URL for the image.
         """
-        if not self.api_key:
-            logging.warning("GEMINI_API_KEY not found for image generation. Using fallback.")
-            return self._get_pollination_fallback(prompt)
-
-        try:
-            # Using imagen-4.0-fast-generate-001 for higher quota limits (10/day Fast tier)
-            response = self.client.models.generate_image(
-                model='imagen-4.0-fast-generate-001',
-                prompt=f"realistic, high quality, 4k, drone view, water management, {prompt}",
-                config={
-                    'number_of_images': 1,
-                }
-            )
-            
-            if response and response.generated_images:
-                # Convert PIL Image or bytes to Base64
-                img_data = response.generated_images[0].image
+        # 1. Try Gemini (Primary)
+        if self.api_key:
+            try:
+                logging.info(f"Attempting Gemini Image generation for: {prompt}")
+                # Using imagen-4.0-fast-generate-001 for higher quota limits (10/day Fast tier)
+                response = self.client.models.generate_image(
+                    model='imagen-4.0-fast-generate-001',
+                    prompt=f"realistic, high quality, 4k, drone view, water management, {prompt}",
+                    config={
+                        'number_of_images': 1,
+                    }
+                )
                 
-                # Robust conversion
-                try:
-                    buffered = io.BytesIO()
-                    # Some SDK versions or environments might return bytes instead of PIL Image
-                    if isinstance(img_data, bytes):
-                        buffered.write(img_data)
-                    else:
-                        # Assume it's a PIL Image or something with .save()
-                        # Use positional format for better compatibility
-                        img_data.save(buffered, "PNG")
+                if response and response.generated_images:
+                    img_data = response.generated_images[0].image
                     
-                    img_str = base64.b64encode(buffered.getvalue()).decode()
-                    return f"data:image/png;base64,{img_str}"
-                except Exception as save_err:
-                    logging.error(f"Error converting Gemini image to Base64: {save_err}")
-                    logging.info(f"Image object type: {type(img_data)}")
-                    # Fallback to pollinations if conversion fails
-                    return self._get_pollination_fallback(prompt)
+                    try:
+                        buffered = io.BytesIO()
+                        # Some SDK versions or environments might return bytes instead of PIL Image
+                        if isinstance(img_data, bytes):
+                            buffered.write(img_data)
+                        elif hasattr(img_data, 'save'):
+                            # Try with BytesIO first (standard PIL behavior)
+                            try:
+                                img_data.save(buffered, format="PNG")
+                            except (TypeError, ValueError, Exception):
+                                # If BytesIO fails, try saving to a temp file (GenAI SDK specific behavior sometimes)
+                                import tempfile
+                                import os
+                                fd, temp_path = tempfile.mkstemp(suffix=".png")
+                                try:
+                                    os.close(fd)
+                                    img_data.save(temp_path)
+                                    with open(temp_path, "rb") as f:
+                                        buffered.write(f.read())
+                                finally:
+                                    if os.path.exists(temp_path):
+                                        os.remove(temp_path)
+                        else:
+                            raise ValueError(f"Unsupported image data type: {type(img_data)}")
+                        
+                        img_str = base64.b64encode(buffered.getvalue()).decode()
+                        logging.info("Gemini image successfully generated and converted.")
+                        return f"data:image/png;base64,{img_str}"
+                    except Exception as save_err:
+                        logging.error(f"Error converting Gemini image to Base64: {save_err}")
+                        # Don't return here, let it fall through to HF fallback
+
+
+                else:
+                    logging.warning("No images found in Gemini response.")
+
+            except Exception as e:
+                # Check for quota exhaustion (429) or other API errors
+                error_msg = str(e)
+                if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                    logging.warning("Gemini Image Quota Exceeded. Switching to fallback.")
+                else:
+                    logging.error(f"Gemini Image API error: {e}")
+
+        # 2. Try Hugging Face (Secondary Fallback)
+        logging.info("Attempting Hugging Face fallback...")
+        hf_image = self._generate_huggingface_image(prompt)
+        if hf_image:
+            logging.info("Hugging Face image successfully generated.")
+            return hf_image
                 
-            logging.warning("No images found in Gemini response. Using Pollinations fallback.")
-            return self._get_pollination_fallback(prompt)
-            
-        except Exception as e:
-            # Check for quota exhaustion (429) or other API errors
-            error_msg = str(e)
-            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                logging.warning(f"Gemini Image Quota Exceeded (Limit 70/day). Switching to Hugging Face fallback.")
-            else:
-                logging.error(f"Gemini Image API error: {e}")
-            
-            # Try Hugging Face first as requested by user
-            hf_image = self._generate_huggingface_image(prompt)
-            if hf_image:
-                return hf_image
-                
-            return self._get_pollination_fallback(prompt)
+        # 3. Try Pollinations (Final Fallback)
+        logging.info("Using Pollinations final fallback.")
+        return self._get_pollination_fallback(prompt)
+
 
     def _generate_huggingface_image(self, prompt: str) -> str:
         """

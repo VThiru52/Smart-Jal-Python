@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
+import asyncio
+
 from app.schemas import Village, Forecast
 from app.core.supabase import get_supabase, get_supabase_admin
 from app.services.audit_service import audit_service
